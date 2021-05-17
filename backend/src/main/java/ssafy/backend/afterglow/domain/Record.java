@@ -32,10 +32,14 @@ public class Record {
     @OneToMany(mappedBy = "rec", cascade = CascadeType.ALL)
     private List<DailyRecord> dayRecs = new ArrayList<>();
 
+    @JsonProperty("total_img_count")
+    private Integer totalPhotoCount;
+
     @Builder
-    public Record(User user, String recName){
+    public Record(User user, String recName, Integer totalPhotoCount){
         super();
         this.recName = recName;
         this.user = user;
+        this.totalPhotoCount = totalPhotoCount;
     }
 }

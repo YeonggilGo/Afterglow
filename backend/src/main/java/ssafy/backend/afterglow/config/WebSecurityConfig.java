@@ -12,16 +12,12 @@ import org.springframework.security.web.authentication.rememberme.PersistentToke
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import ssafy.backend.afterglow.repository.RememberMeTokenRepository;
 import ssafy.backend.afterglow.service.UserService;
 
 @RequiredArgsConstructor
 @EnableWebSecurity
 public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
     private final UserService userService;
-
-    @Value("${remember_me_secret}")
-    private String remember_me_secret;
 
     @Override
     protected void configure(HttpSecurity http) throws Exception {
@@ -51,20 +47,5 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
-    }
-
-    @Bean
-    public PersistentTokenBasedRememberMeServices rememberMeServices() {
-        PersistentTokenBasedRememberMeServices rememberMeServices = new PersistentTokenBasedRememberMeServices(remember_me_secret, userService, rememberMeTokenRepository());
-        rememberMeServices.setAlwaysRemember(true);
-        rememberMeServices.setCookieName("remember-me");
-        rememberMeServices.setTokenValiditySeconds(60 * 60 * 24 * 90);
-        return rememberMeServices;
-    }
-
-    @Bean
-    RememberMeTokenRepository rememberMeTokenRepository() {
-        RememberMeTokenRepository rememberMeTokenRepository = new RememberMeTokenRepository();
-        return rememberMeTokenRepository;
     }
 }

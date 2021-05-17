@@ -6,8 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 import ssafy.backend.afterglow.domain.*;
 import ssafy.backend.afterglow.dto.ImageInputDto;
 import ssafy.backend.afterglow.repository.*;
@@ -16,13 +17,12 @@ import ssafy.backend.afterglow.service.UserService;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.transaction.Transactional;
 import java.io.IOException;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @RestController
@@ -42,28 +42,47 @@ public class RecordController {
     private final RecordRepository recordRepository;
     private final DailyRepository dailyRepository;
     private final RouteRepository routeRepository;
+    @Autowired
     private final ConsumptionRepository conRepository;
     private final TourDestinationRepository tourDestinationRepository;
 
 
     // 이미지 저장
     @SneakyThrows
-    @PostMapping(value = "/saveImg")
-    public ResponseEntity<Integer> saveImg(@RequestBody List<ImageInputDto> images) {
+    @PostMapping(value = "/save/images")
+    public ResponseEntity<Integer> saveImgs(@RequestBody List<MultipartFile> images,
+                                            @RequestParam("rr_id_list") List<Long> rr_id_list) {
         images
                 .stream()
                 .forEach(image -> {
                     ImageRecord ir = new ImageRecord();
                     try {
-                        ir.setIrImage(image.getIrImage().getBytes());
-                        ir.setImgHeight(image.getHeight());
-                        ir.setImgWidth(image.getWidth());
+                        ir.setIrImage(image.getBytes());
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    ir.setRr(routeRepository.findById(image.getRrId()).get());
+                    ir.setRr(routeRepository.findById(rr_id_list.get(images.indexOf(image))).get());
                     imageRepository.save(ir);
                 });
+        return new ResponseEntity<Integer>(SUCCESS, HttpStatus.OK);
+    }
+
+    // 단일 이미지 저장
+    @SneakyThrows
+    @PostMapping(value = "/save/image")
+    public ResponseEntity<Integer> saveImg(MultipartHttpServletRequest request,
+                                           @RequestBody MultipartFile image,
+                                           @RequestParam("rr_id") Long rr_id) {
+        System.out.println(request.getFile("file"));
+        ImageRecord ir = new ImageRecord();
+        try {
+            ir.setIrImage(image.getBytes());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        ir.setRr(routeRepository.findById(rr_id).get());
+        imageRepository.save(ir);
+
         return new ResponseEntity<Integer>(SUCCESS, HttpStatus.OK);
     }
 
@@ -83,6 +102,7 @@ public class RecordController {
                     ref.record = recordRepository.save(Record.builder()
                             .user(user)
                             .recName(recTitle)
+                            .totalPhotoCount(0)
                             .build());
                     ref.dr = dailyRepository.save(DailyRecord.builder()
                             .rec(ref.record)
@@ -123,10 +143,9 @@ public class RecordController {
     @PostMapping("/consumption")
     public ResponseEntity<List<ConsumptionRecord>> setConsumption(@RequestParam("day_id") Long dayId,
                                                                   @RequestParam("consumption_name") String conName,
-                                                                  @RequestParam("consumption_money") Integer conMoney,
-                                                                  @RequestParam("consumption_time") @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm") LocalDateTime conTime) {
+                                                                  @RequestParam("consumption_money") Integer conMoney) {
         var ref = new Object() {
-            List<ConsumptionRecord> result;
+            List<ConsumptionRecord> result = null;
         };
         dailyRepository
                 .findById(dayId)
@@ -135,7 +154,7 @@ public class RecordController {
                             .dr(dr)
                             .crName(conName)
                             .crMoney(conMoney)
-                            .crDatetime(conTime)
+                            .crDatetime(LocalDateTime.now())
                             .build());
                     ref.result = conRepository.findAllByDr(dr).get();
 
@@ -168,6 +187,7 @@ public class RecordController {
     }
 
     // 가계부 삭제
+    @Transactional
     @DeleteMapping("/consumption")
     public ResponseEntity<List<ConsumptionRecord>> deleteConsumption(@RequestParam("consumption_id") Long conId) {
         var ref = new Object() {
@@ -176,8 +196,9 @@ public class RecordController {
         conRepository
                 .findById(conId)
                 .ifPresent(cr -> {
-                    conRepository.delete(cr);
-                    ref.result = conRepository.findAllByDr(cr.getDr()).get();
+                    DailyRecord dr = cr.getDr();
+                    conRepository.deleteByCrId(conId);
+                    ref.result = conRepository.findAllByDr(dr).get();
                 });
         return ResponseEntity.ok(ref.result);
     }
@@ -223,24 +244,22 @@ public class RecordController {
 
     // 하루끝
     @GetMapping("/dayEnd")
-    public ResponseEntity<DailyRecord> dayEnd(HttpServletRequest request,
-                                              HttpServletResponse response,
-                                              @RequestParam("drId") Long drId) throws IOException {
+    public ResponseEntity<DailyRecord> dayEnd(@RequestParam("drId") Long drId,
+                                              @RequestParam("photo_count") Integer photoCount) throws IOException {
         var ref = new Object() {
             DailyRecord result;
         };
-        userService
-                .findUserByToken(request, response)
-                .ifPresent(user -> {
-                    dailyRepository.findById(drId)
-                            .ifPresent(dr -> {
-                                dr.setDrEndTime(LocalDateTime.now());
-                                Duration duration = Duration.between(dr.getDrStartTime(), dr.getDrEndTime());
-                                long hours = Math.floorDiv(duration.getSeconds(), 3600);
-                                long minutes = Math.floorDiv(duration.getSeconds() - 3600 * hours, 60);
-                                dr.setDrTimeSpent(String.format("%d:%d", hours, minutes));
-                                ref.result = dailyRepository.save(dr);
-                            });
+        dailyRepository.findById(drId)
+                .ifPresent(dr -> {
+                    dr.setDrEndTime(LocalDateTime.now());
+                    Duration duration = Duration.between(dr.getDrStartTime(), dr.getDrEndTime());
+                    long hours = Math.floorDiv(duration.getSeconds(), 3600);
+                    long minutes = Math.floorDiv(duration.getSeconds() - 3600 * hours, 60);
+                    dr.setDrTimeSpent(String.format("%d:%d", hours, minutes));
+                    ref.result = dailyRepository.save(dr);
+                    Record rec = dr.getRec();
+                    rec.setTotalPhotoCount(rec.getTotalPhotoCount() + photoCount);
+                    recordRepository.save(rec);
                 });
         return ResponseEntity.ok(ref.result);
     }
@@ -252,37 +271,58 @@ public class RecordController {
                                                          @RequestParam("rr_longitude") Double rrLong) {
         var ref = new Object() {
             TourDestination nearestTd = null;
+            String tdName = "place";
         };
         Map<String, Object> result = new HashMap<>();
         result.put("rr", null);
         dailyRepository.findById(drId)
                 .ifPresent(dr -> {
                     Optional<RouteRecord> latestRr = recordService.getLatestRr(dr);
+                    // 전의 기록이 없을 때
                     if (latestRr != null) {
                         result.put("isUserMoving", recordService.isUserMoving(latestRr.get(), rrLat, rrLong));
-                        if (latestRr.get().getRrName() != null && recordService.getDist(latestRr.get().getLatest_latitude(), latestRr.get().getLatest_longitude(), rrLat, rrLong) > 3) {
-                            result.replace("rr", routeRepository.save(recordService.customBuilder(dr, rrLat, rrLong)));
-                        } else {
-                            if (!recordService.isUserMoving(latestRr.get(), rrLat, rrLong)) {
-                                latestRr.get().setRrStaying_minute(latestRr.get().getRrStaying_minute() + 1);
+                        // 전의 기록이 장소 일 때
+                        if (latestRr.get().getRrName() != null) {
+                            // 장소에서 3km 벗어남
+                            if (recordService.getDist(latestRr.get().getRrLatitude(), latestRr.get().getRrLongitude(), rrLat, rrLong) > 3) {
+                                result.replace("rr", routeRepository.save(recordService.customBuilder(dr, rrLat, rrLong)));
+                            } else {
+                                // 최근 위치로 저장
                                 latestRr.get().setLatest_latitude(rrLat);
                                 latestRr.get().setLatest_longitude(rrLong);
+                            }
+                            // 1분에 400미터 이상 움직임 -> 이동수단으로 이동중
+                        } else if (recordService.getDist(latestRr.get().getLatest_latitude(), latestRr.get().getLatest_longitude(), rrLat, rrLong) > 0.4) {
+                            result.replace("rr", routeRepository.save(recordService.customBuilder(dr, rrLat, rrLong)));
+                            // 장소도 아니고 이동수단도 이용하지 않는 중
+                        } else {
+                            // 1분에 100미터 이상 움직이지 않음 : 도보로 걷는중
+                            if ((Boolean) result.get("isUserMoving") == false) {
+                                latestRr.get().setRrStaying_minute(latestRr.get().getRrStaying_minute() + 1); // 체류시간 1분 증가
+                                latestRr.get().setLatest_latitude(rrLat); // 최근 위치 저장
+                                latestRr.get().setLatest_longitude(rrLong);
 
-                                if (latestRr.get().getRrName() != null && latestRr.get().getRrStaying_minute() >= 15) {
-                                    double nearestDist = 3;
+                                // 체류시간이 10분 지속 : 가장 가까운 관광지 탐색, 없으면 이름은 없지만 장소로 인식
+                                if (latestRr.get().getRrName() == null && latestRr.get().getRrStaying_minute() >= 10) {
+                                    final double[] nearestDist = {3};
                                     tourDestinationRepository.findAll()
                                             .stream()
                                             .forEach(td -> {
-                                                if (recordService.getDist(latestRr.get().getRrLatitude(), latestRr.get().getRrLongitude(), td.getTdLatitude(), td.getTdLongitude()) < nearestDist) {
+                                                Double curDist = recordService.getDist(latestRr.get().getRrLatitude(), latestRr.get().getRrLongitude(), td.getTdLatitude(), td.getTdLongitude());
+                                                if (curDist < nearestDist[0]) {
+                                                    nearestDist[0] = curDist;
                                                     ref.nearestTd = td;
+                                                    ref.tdName = td.getTdName();
                                                 }
                                             });
                                     if (ref.nearestTd != null) {
-                                        latestRr.get().setRrName(ref.nearestTd.getTdName());
                                         latestRr.get().setRrLatitude(ref.nearestTd.getTdLatitude());
                                         latestRr.get().setRrLongitude(ref.nearestTd.getTdLongitude());
+                                        latestRr.get().setLatest_latitude(ref.nearestTd.getTdLatitude());
+                                        latestRr.get().setLatest_longitude(ref.nearestTd.getTdLongitude());
                                     }
-                                    result.put("place", ref.nearestTd);
+                                    latestRr.get().setRrName(ref.tdName);
+                                    result.put("place", ref.tdName);
                                 }
                                 routeRepository.save(latestRr.get());
                             } else {

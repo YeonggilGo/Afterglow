@@ -54,7 +54,7 @@ public class RecordService {
 
     public Optional<RouteRecord> getLatestRr(DailyRecord dr) {
         Optional<List<RouteRecord>> rrList = rouRepo.findByDr(dr);
-        if (rrList.isPresent()) {
+        if (rrList == null || rrList.get().size() == 0) {
             return null;
         } else {
             return Optional.ofNullable(rrList.get().get(rrList.get().size() - 1));
@@ -87,10 +87,10 @@ public class RecordService {
         return getDist(rr1.getRrLatitude(), rr1.getRrLongitude(), rr2.getRrLatitude(), rr2.getRrLongitude());
     }
 
-    public Double getDist(double lat1, double lon1, double lat2, double lon2) {
+    public Double getDist(Double lat1, Double lon1, Double lat2, Double lon2) {
 
-        double theta = lon1 - lon2;
-        double dist = Math.sin(deg2rad(lat1)) * Math.sin(deg2rad(lat2)) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.cos(deg2rad(theta));
+        Double theta = lon1 - lon2;
+        Double dist = Math.sin(deg2rad(lat1)) * Math.sin(deg2rad(lat2)) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.cos(deg2rad(theta));
 
         dist = Math.acos(dist);
         dist = rad2deg(dist);
@@ -98,14 +98,14 @@ public class RecordService {
 
         dist = dist * 1.609344;
 
-        return (dist);
+        return dist;
     }
 
-    public static double deg2rad(double deg) {
+    public static Double deg2rad(Double deg) {
         return (deg * Math.PI / 180.0);
     }
 
-    public static double rad2deg(double rad) {
+    public static Double rad2deg(Double rad) {
         return (rad * 180 / Math.PI);
     }
 
