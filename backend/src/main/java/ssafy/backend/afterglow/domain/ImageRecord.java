@@ -28,14 +28,8 @@ public class ImageRecord {
     @ManyToOne
     @JoinColumn(name = "rrId")
     @JsonIgnore
-    //@JsonProperty("rr")
     private RouteRecord rr;
 
-    @JsonProperty("imgHeight")
-    private Integer imgHeight;
-
-    @JsonProperty("imgWidth")
-    private Integer imgWidth;
 
     @Builder
     public ImageRecord(RouteRecord rr, byte[] irImage){

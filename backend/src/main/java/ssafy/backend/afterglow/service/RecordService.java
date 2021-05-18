@@ -20,21 +20,18 @@ import java.util.stream.Collectors;
 public class RecordService {
     @Autowired
     UserRepository userRepo;
-
     @Autowired
     RecordRepository recRepo;
-
     @Autowired
     DailyRepository dayRepo;
-
     @Autowired
     RouteRepository rouRepo;
-
     @Autowired
     ConsumptionRepository conRepo;
-
     @Autowired
     ImageRepository imgRepo;
+    @Autowired
+    TourDestinationRepository tourRepo;
 
     public Long getRecTotalTime(Long recId) {
         Optional<Record> rec = recRepo.findById(recId);
@@ -118,5 +115,19 @@ public class RecordService {
                 .rrLatitude(lat)
                 .rrTime(LocalDateTime.now())
                 .build();
+    }
+
+
+
+    public List<TourDestination> getToursInRange(Double radius, Double latitude, Double longitude){
+        List<TourDestination> result = tourRepo.findAll();
+        tourRepo.findAll()
+                .stream()
+                .forEach(td -> {
+                    if(getDist(latitude, longitude, td.getTdLatitude(), td.getTdLongitude()) <= radius){
+                        result.add(td);
+                    }
+                });
+        return result;
     }
 }

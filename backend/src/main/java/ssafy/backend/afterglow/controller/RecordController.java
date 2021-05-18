@@ -73,10 +73,12 @@ public class RecordController {
     public ResponseEntity<Integer> saveImg(MultipartHttpServletRequest request,
                                            @RequestBody MultipartFile image,
                                            @RequestParam("rr_id") Long rr_id) {
-        System.out.println(request.getFile("file"));
+        try {
+        } catch (Exception e) {
+        }
         ImageRecord ir = new ImageRecord();
         try {
-            ir.setIrImage(image.getBytes());
+            ir.setIrImage(request.getFile("file").getBytes());
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -110,7 +112,7 @@ public class RecordController {
                             .drStartTime(LocalDateTime.now())
                             .build());
                 });
-        return ResponseEntity.ok(recordRepository.findById(ref.record.getRecId()).get());
+        return new ResponseEntity(recordRepository.findById(ref.record.getRecId()).get(), HttpStatus.valueOf(response.getStatus()));
     }
 
     // 하루 시작
@@ -122,20 +124,15 @@ public class RecordController {
             DailyRecord dr = null;
         };
 
-        userService
-                .findUserByToken(request, response)
-                .ifPresent(user -> {
-                    recordRepository.findById(recId)
-                            .ifPresent(record -> {
-                                ref.dr = dailyRepository.save(DailyRecord.builder()
-                                        .drDate(LocalDate.now())
-                                        .rec(record)
-                                        .drStartTime(LocalDateTime.now())
-                                        .build());
-                            });
+        recordRepository.findById(recId)
+                .ifPresent(record -> {
+                    ref.dr = dailyRepository.save(DailyRecord.builder()
+                            .drDate(LocalDate.now())
+                            .rec(record)
+                            .drStartTime(LocalDateTime.now())
+                            .build());
                 });
         return ResponseEntity.ok(ref.dr);
-
     }
 
 
@@ -215,28 +212,22 @@ public class RecordController {
                 .ifPresent(user -> {
                     ref.result = recordRepository.findByUser(user);
                 });
-        return ResponseEntity.ok(ref.result);
+        return new ResponseEntity(ref.result, HttpStatus.valueOf(response.getStatus()));
     }
 
     // 하루 기준 현 시간까지의 실시간 정보 받아오기
     @GetMapping("/current")
-    public ResponseEntity<Object> currentInfo(@RequestParam("drId") Long drId,
-                                              HttpServletRequest request,
-                                              HttpServletResponse response) throws IOException {
+    public ResponseEntity<Object> currentInfo(@RequestParam("drId") Long drId) throws IOException {
         var ref = new Object() {
             DailyRecord result = null;
         };
-        userService
-                .findUserByToken(request, response)
-                .ifPresent(user -> {
-                    dailyRepository.findById(drId)
-                            .ifPresent(dr -> {
-                                Duration duration = Duration.between(dr.getDrStartTime(), LocalDateTime.now());
-                                long hours = Math.floorDiv(duration.getSeconds(), 3600);
-                                long minutes = Math.floorDiv(duration.getSeconds() - 3600 * hours, 60);
-                                dr.setDrTimeSpent(String.format("%d:%d", hours, minutes));
-                                ref.result = dr;
-                            });
+        dailyRepository.findById(drId)
+                .ifPresent(dr -> {
+                    Duration duration = Duration.between(dr.getDrStartTime(), LocalDateTime.now());
+                    long hours = Math.floorDiv(duration.getSeconds(), 3600);
+                    long minutes = Math.floorDiv(duration.getSeconds() - 3600 * hours, 60);
+                    dr.setDrTimeSpent(String.format("%d:%d", hours, minutes));
+                    ref.result = dr;
                 });
         return ResponseEntity.ok(ref.result);
     }
@@ -278,7 +269,7 @@ public class RecordController {
         dailyRepository.findById(drId)
                 .ifPresent(dr -> {
                     Optional<RouteRecord> latestRr = recordService.getLatestRr(dr);
-                    // 전의 기록이 없을 때
+                    // 전의 기록이 있을 때
                     if (latestRr != null) {
                         result.put("isUserMoving", recordService.isUserMoving(latestRr.get(), rrLat, rrLong));
                         // 전의 기록이 장소 일 때
@@ -425,6 +416,19 @@ public class RecordController {
         return ResponseEntity.ok(result);
     }
 
+    // 단일 사진
+    @GetMapping("/picture")
+    public ResponseEntity<List<ImageRecord>> picture(@RequestParam("rr_id") Long rrId) {
+        List<ImageRecord> result = null;
+        routeRepository
+                .findById(rrId)
+                .ifPresent(rr -> {
+                    result.addAll(imageRepository.findAllByRr(rr)
+                            .orElse(new ArrayList<>()));
+                });
+        return ResponseEntity.ok(result);
+    }
+
 
     // 여행 정보
     @GetMapping("/tripInfo")
@@ -457,6 +461,18 @@ public class RecordController {
                             });
 
                 });
+        return ResponseEntity.ok(ref.result);
+    }
+
+    // 현 위치에서 가까운 여행지 목록
+    @GetMapping("/tours")
+    public ResponseEntity<List<TourDestination>> getCloseTours(@RequestParam("limit_radius") Double radius,
+                                                               @RequestParam("cur_latitude") Double latitude,
+                                                               @RequestParam("cur_longitude") Double longitude){
+        var ref = new Object() {
+            List<TourDestination> result;
+        };
+        ref.result = recordService.getToursInRange(radius, latitude, longitude);
         return ResponseEntity.ok(ref.result);
     }
 }
